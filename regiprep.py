@@ -46,7 +46,7 @@ optional_arglist   = ['--outdir', '--min_vox_size', '--pad_size',
                       '--im1_mask', '--im2_mask',
                       '--transfer_preproc']
 optional_helplist  = ['Folder to write outputs to, defaults to where program was executed',
-                     'minimum voxel size, single float',
+                     'minimum voxel size',
                      'background pad added to each end of each dimension, single int',
                      'lambda param for foreground segmentation of image1',
                      'lambda param for foreground segmentation of image2',
@@ -86,6 +86,8 @@ def brain_detection(im_list, vox, im_lambda):
     # TODO: consider better options here (sum projection in foreground, mean
     #       projection in background - using a quick heuristic foreground/
     #       background threshold)
+    #       Use the very nice two-channel image I stitched for Yu/Sujatha
+    #       to test alternatives. Do a dual channel alignment to the Z-brain.
     print("\t\tSUMMING CHANNELS")
     im_sum = np.sum(np.array(im_list_norm), axis=0)
     print("\t\tFOREGROUND SEGMENTATION")
@@ -130,8 +132,9 @@ def preprocess(args, outdir):
     print("\tNORMALIZING VOXEL SIZE")
     """All outputs will be at this voxel size, so we can overwrite inputs here
        Update meta data voxel size, important to keep track of all spatial changes"""
-    min_size = 0.25 if args.min_vox_size is None else float(args.min_vox_size)
-    min_size = np.array([min_size,]*dim)
+    min_size = np.array([0.25,]*dim)
+    if args.min_vox_size:
+        min_size = np.array([float(x) for x in args.min_vox_size.split('x')])
     for i, (im1, im2) in enumerate(zip(im1_list, im2_list)):
         a, b, newvox = pp.normalize_voxelsize(im1, v1, im2, v2, min_size=min_size)
         im1_list[i], im2_list[i], = a, b
