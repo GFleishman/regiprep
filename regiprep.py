@@ -229,7 +229,7 @@ def transfer_preprocess(args, outdir):
     v1, v2 = im1_meta_list[0]['pixdim'][1:d+1], im2_meta_list[0]['pixdim'][1:d+1]
     target_dims = np.array(im1_list[0].shape)
     current_dims = np.round(np.array(im2_list[0].shape) * v2/v1).astype(np.int)
-    left_offsets = (origin_offsets/v1).astype(int)
+    left_offsets = (origin_offset/v1).astype(int)
     right_offsets = target_dims - current_dims + left_offsets
     box = [slice(slc_positive(l), slc_negative(r)) for l, r in zip(left_offsets, right_offsets)]
     pad = [(-pad_negative(l), pad_positive(r)) for l, r in zip(left_offsets, right_offsets)]
