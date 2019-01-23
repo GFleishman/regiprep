@@ -225,12 +225,13 @@ def transfer_preprocess(args, outdir):
     d = len(im1_list[0].shape)  # image dimensionality
     origin1 = np.array([im1_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
     origin2 = np.array([im2_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
-    origin_offset = origin1 - origin2
-    v1, v2 = im1_meta_list[0]['pixdim'][1:d+1], im2_meta_list[0]['pixdim'][1:d+1]
-    target_dims = np.array(im1_list[0].shape)
-    current_dims = np.round(np.array(im2_list[0].shape) * v2/v1).astype(np.int)
-    left_offsets = (origin_offset/v1).astype(int)
-    right_offsets = target_dims - current_dims + left_offsets
+    v1 = im1_meta_list[0]['pixdim'][1:d+1]
+    v2 = im2_meta_list[0]['pixdim'][1:d+1]
+    dims1 = np.array(im1_list[0].shape)
+    dims2 = np.round(np.array(im2_list[0].shape) * v2/v1).astype(np.int)  # at im1 voxel size
+
+    left_offsets = ( (origin1 - origin2) /v1).astype(int)
+    right_offsets = dims1 - dims2 + left_offsets
     box = [slice(slc_positive(l), slc_negative(r)) for l, r in zip(left_offsets, right_offsets)]
     pad = [(-pad_negative(l), pad_positive(r)) for l, r in zip(left_offsets, right_offsets)]
 
@@ -242,14 +243,30 @@ def transfer_preprocess(args, outdir):
     print("\tPREPROCESSING TRANSFER COMPLETE")
 
 
-# TODO: implement a third mode: revert_preprocess (undo preprocessing relative to reference)
-#       alternative: rewrite transfer_preprocess to consider origin of im2, compute offsets
-#       from both origins, then "revert" would just be "transfer_preprocess" using the
-#       original image as the reference
+
+
+def transfer_metadata(args, outdir):
+
+    print("BEGIN METADATA TRANSFER")
+    print("\tREADING IMAGES")
+    im1_list, im1_meta_list, im1_names = read_all_channels(args.image1)
+    im2_list, im2_meta_list, im2_names = read_all_channels(args.image2)
+    if not len(im1_list) == 1:
+        print("ERROR: Only one reference allowed in transfer mode")
+        sys.exit()
+
+    print("\tTRANSFERING METADATA INFO")
+    for im, name in zip(im2_list, im2_names):
+        fileio.write_image(outdir+'/'+name+'_pp.nii.gz', im, im1_meta_list[0])
+    print("\tMETADATA TRANSFER COMPLETE")
+
+
 # TODO: add a "reformat" mode that takes arbitrary image formats as input and writes out
 #       as .nii.gz
 # TODO: add a metadata updater mode
 # TODO: generally the goal with the above two is to eliminate c3d from the processing pipeline
+# TODO: clean up interface options for transfering metadata vs preprocessing
+# TODO: consider consolidating code duplications
 if __name__ == '__main__':
 
     print("PARSING INPUTS")
@@ -260,6 +277,8 @@ if __name__ == '__main__':
     print("DETERMINING MODE")
     if args.transfer_preproc == '1':
         transfer_preprocess(args, outdir)
+    elif args.transfer_preproc == '2':
+        transfer_metadata(args, outdir)
     else:
         preprocess(args, outdir)
 
