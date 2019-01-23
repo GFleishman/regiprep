@@ -38,21 +38,20 @@ correctly set in the meta data and it is assumed that
 voxel 0 is the origin, i.e. x,y,z at i,j,k = 0 are all 0.
 """
 
-mandatory_arglist  = ['image1', 'image2']
-mandatory_helplist = ["Filepaths to first image channels",
+mandatory_arglist  = ['mode', 'image1', 'image2']
+mandatory_helplist = ["mode to run: preprocess, transfer_preprocess, or transfer_metadata'",
+                      "Filepaths to first image channels",
                       "Filepaths to second image channels"]
 optional_arglist   = ['--outdir', '--min_vox_size', '--pad_size',
                       '--im1_lambda', '--im2_lambda',
-                      '--im1_mask', '--im2_mask',
-                      '--transfer_preproc']
+                      '--im1_mask', '--im2_mask']
 optional_helplist  = ['Folder to write outputs to, defaults to where program was executed',
                      'minimum voxel size',
                      'background pad added to each end of each dimension, single int',
                      'lambda param for foreground segmentation of image1',
                      'lambda param for foreground segmentation of image2',
                      'Filepath to mask for image1, prevents computation of new mask',
-                     'Filepath to mask for image2, prevents computation of new mask',
-                     '1: Turns on transfer mode; any other value runs preprocess mode']
+                     'Filepath to mask for image2, prevents computation of new mask']
 
 
 # --------------------------- Functions --------------------------------------------
@@ -263,7 +262,8 @@ def transfer_metadata(args, outdir):
 
 # TODO: add a "reformat" mode that takes arbitrary image formats as input and writes out
 #       as .nii.gz
-# TODO: add a metadata updater mode
+# TODO: add reformat functions (change orientation, reflect, change axis encoding order
+#       e.g. dorsal --> ventral vs ventral --> dorsal)
 # TODO: generally the goal with the above two is to eliminate c3d from the processing pipeline
 # TODO: clean up interface options for transfering metadata vs preprocessing
 # TODO: consider consolidating code duplications
@@ -275,10 +275,15 @@ if __name__ == '__main__':
     if not isdir(outdir): mkdir(outdir)
 
     print("DETERMINING MODE")
-    if args.transfer_preproc == '1':
+    if args.mode == 'transfer_preprocess':
         transfer_preprocess(args, outdir)
-    elif args.transfer_preproc == '2':
+    elif args.mode == 'transfer_metadata':
         transfer_metadata(args, outdir)
-    else:
+    elif args.mode == 'preprocess':
         preprocess(args, outdir)
+    else:
+        error_message = "ERROR: mode (first argument) must be "
+        error_message += "preprocess, transfer_preprocess, or transfer_metadata\n"
+        error_message += "mode given: " + args.mode
+        print(error_message)
 
