@@ -223,11 +223,13 @@ def transfer_preprocess(args, outdir):
     print("\tGETTING PREPROCESSING PARAMETERS")
     """assumed that all images in im2_list have the same shape, origin, and voxel size"""
     d = len(im1_list[0].shape)  # image dimensionality
-    origin = np.array([im1_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
+    origin1 = np.array([im1_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
+    origin2 = np.array([im2_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
+    origin_offset = origin1 - origin2
     v1, v2 = im1_meta_list[0]['pixdim'][1:d+1], im2_meta_list[0]['pixdim'][1:d+1]
     target_dims = np.array(im1_list[0].shape)
     current_dims = np.round(np.array(im2_list[0].shape) * v2/v1).astype(np.int)
-    left_offsets = (origin/v1).astype(int)
+    left_offsets = (origin_offsets/v1).astype(int)
     right_offsets = target_dims - current_dims + left_offsets
     box = [slice(slc_positive(l), slc_negative(r)) for l, r in zip(left_offsets, right_offsets)]
     pad = [(-pad_negative(l), pad_positive(r)) for l, r in zip(left_offsets, right_offsets)]
@@ -238,7 +240,6 @@ def transfer_preprocess(args, outdir):
         im_pp = np.pad(im_pp[box], pad, mode='constant')
         fileio.write_image(outdir+'/'+name+'_pp.nii.gz', im_pp, im1_meta_list[0])
     print("\tPREPROCESSING TRANSFER COMPLETE")
-
 
 
 # TODO: implement a third mode: revert_preprocess (undo preprocessing relative to reference)
