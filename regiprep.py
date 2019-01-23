@@ -228,7 +228,6 @@ def transfer_preprocess(args, outdir):
     v2 = im2_meta_list[0]['pixdim'][1:d+1]
     dims1 = np.array(im1_list[0].shape)
     dims2 = np.round(np.array(im2_list[0].shape) * v2/v1).astype(np.int)  # at im1 voxel size
-
     left_offsets = ( (origin1 - origin2) /v1).astype(int)
     right_offsets = dims1 - dims2 + left_offsets
     box = [slice(slc_positive(l), slc_negative(r)) for l, r in zip(left_offsets, right_offsets)]
@@ -260,13 +259,12 @@ def transfer_metadata(args, outdir):
     print("\tMETADATA TRANSFER COMPLETE")
 
 
-# TODO: add a "reformat" mode that takes arbitrary image formats as input and writes out
+# TODO: add a file conversion mode that takes arbitrary image formats as input and writes out
 #       as .nii.gz
 # TODO: add reformat functions (change orientation, reflect, change axis encoding order
 #       e.g. dorsal --> ventral vs ventral --> dorsal)
 # TODO: generally the goal with the above two is to eliminate c3d from the processing pipeline
-# TODO: clean up interface options for transfering metadata vs preprocessing
-# TODO: consider consolidating code duplications
+# TODO: consider consolidating code duplications (e.g. reading/writing files in different modes)
 if __name__ == '__main__':
 
     print("PARSING INPUTS")
