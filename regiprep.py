@@ -270,7 +270,11 @@ if __name__ == '__main__':
     print("PARSING INPUTS")
     args = parse_inputs()
     outdir = args.outdir if args.outdir is not None else abspath(getcwd())
-    if not isdir(outdir): mkdir(outdir)
+    if not isdir(outdir):
+        try:
+            mkdir(outdir)
+        except OSError as err:
+            print("Could not create outdir: {0}".format(err), file=sys.stderr)
 
     print("DETERMINING MODE")
     if args.mode == 'transfer_preprocess':
