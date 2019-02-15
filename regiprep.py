@@ -42,16 +42,26 @@ mandatory_arglist  = ['mode', 'image1', 'image2']
 mandatory_helplist = ["mode to run: preprocess, transfer_preprocess, or transfer_metadata'",
                       "Filepaths to first image channels",
                       "Filepaths to second image channels"]
-optional_arglist   = ['--outdir', '--min_vox_size', '--pad_size',
+optional_arglist   = ['--outdir',
+                      '--pad_size', '--min_vox_size',
+                      '--im1_vox_size', '--im2_vox_size',
                       '--im1_lambda', '--im2_lambda',
-                      '--im1_mask', '--im2_mask']
+                      '--im1_mask', '--im2_mask',
+                      '--rotate_im1', '--rotate_im2',
+                      '--reorder_im1', '--reorder_im2']
 optional_helplist  = ['Folder to write outputs to, defaults to where program was executed',
-                     'minimum voxel size',
                      'background pad added to each end of each dimension, single int',
-                     'lambda param for foreground segmentation of image1',
-                     'lambda param for foreground segmentation of image2',
+                     'minimum voxel size for resampling',
+                     'im1 voxel size, required if im1 is not nifti',
+                     'im2 voxel size, required if im2 is not nifti',
+                     'lambda param for foreground segmentation of image1 (smaller -> tighter)',
+                     'lambda param for foreground segmentation of image2 (smaller -> tighter)',
                      'Filepath to mask for image1, prevents computation of new mask',
-                     'Filepath to mask for image2, prevents computation of new mask']
+                     'Filepath to mask for image2, prevents computation of new mask',
+                     'Rotate im1 clockwise, specify axis (0, 1, or 2) and degs (90, 180, or 270)',
+                     'Rotate im2 clockwise, specify axis (0, 1, or 2) and degs (90, 180, or 270)',
+                     'Invert axis order for im 1 (e.g. vent-->dors to dors-->vent), specify axes',
+                     'Invert axis order for im 2 (e.g. vent-->dors to dors-->vent), specify axes']
 
 
 # --------------------------- Functions --------------------------------------------
@@ -63,18 +73,41 @@ def parse_inputs():
     return parser.parse_args()
 
 
-def read_all_channels(filepaths_string):
+def read_all_channels(filepaths_string, rotate=None, reorder=None, vox_size=None):
     # expected syntax: [[im1_ch1.nii.gz,im1_ch2.nii,...]... ], see mandatory_helplist
     im_paths = [abspath(x.strip('[]')) for x in filepaths_string.split(',')]
     im, im_meta, im_names = [], [], []
     for path in im_paths:
-        if not (path[-4:] == '.nii' or path[-7:] == '.nii.gz'):
-            print('ERROR: All images must be nifti format ending with .nii or .nii.gz')
+        if not (path[-4:] == '.nii' or path[-7:] == '.nii.gz') and vox_size is None:
+            print('ERROR: If not using nifti format you must specify vox size, run with -h for help')
             sys.exit()
         data, meta = fileio.read_image(path)
-        name = basename(path)[:-7] if path[-3:] == '.gz' else basename(path)[:-4]
+        if vox_size is not None:
+            meta['pixdim'][1:4] = [float(x) for x in vox_size.split('x')]
+        data, meta = reformat_data(data, meta, rotate, reorder)
+        name = basename(path).split('.')[0]
         im.append(data); im_meta.append(meta); im_names.append(name)
     return im, im_meta, im_names
+
+
+def reformat_data(im, meta, rotate, reorder):
+    # Does not modify q/s forms, as reformat should only be called before
+    # any preprocessing or alignment has been done, and thus q/s forms are
+    # arbitrary/not set
+    if rotate:
+        rotations = rotate.split('|')
+        for rotation in rotations:
+            axis, degrees = [int(x) for x in rotation.split('x')]
+            rot_plane = tuple([x for x in [0, 1, 2] if x != axis])
+            im = np.rot90(im, degrees/90, rot_plane)
+            meta['dim'][1:4] = im.shape
+            if degrees/90 == 1 or degrees/90 == 3:
+                a, b = meta['pixdim'], rot_plane  # to be succinct
+                a[b[0]+1], a[b[1]+1] = a[b[1]+1], a[b[0]+1]
+    if reorder:
+        axes = tuple([int(x) for x in reorder.split('x')])
+        im = np.flip(im, axes)
+    return im, meta
 
 
 def brain_detection(im_list, vox, im_lambda):
@@ -116,8 +149,14 @@ def preprocess(args, outdir):
     print("BEGIN PREPROCESSING")
     print("\tREADING IMAGES")
     """Also initializing some helpful variables for later"""
-    im1_list, im1_meta_list, im1_names = read_all_channels(args.image1)
-    im2_list, im2_meta_list, im2_names = read_all_channels(args.image2)
+    im1_list, im1_meta_list, im1_names = read_all_channels(args.image1,
+                                                           args.rotate_im1,
+                                                           args.reorder_im1,
+                                                           args.im1_vox_size)
+    im2_list, im2_meta_list, im2_names = read_all_channels(args.image2,
+                                                           args.rotate_im2,
+                                                           args.reorder_im2,
+                                                           args.im2_vox_size)
     dim = len(im1_list[0].shape)  # image dimension
     v1 = im1_meta_list[0]['pixdim'][1:dim+1]  # im1 voxel size
     v2 = im2_meta_list[0]['pixdim'][1:dim+1]
@@ -213,8 +252,14 @@ def transfer_preprocess(args, outdir):
 
     print("BEGIN PREPROCESSING TRANSFER")
     print("\tREADING IMAGES")
-    im1_list, im1_meta_list, im1_names = read_all_channels(args.image1)
-    im2_list, im2_meta_list, im2_names = read_all_channels(args.image2)
+    im1_list, im1_meta_list, im1_names = read_all_channels(args.image1,
+                                                           args.rotate_im1,
+                                                           args.reorder_im1,
+                                                           args.im1_vox_size)
+    im2_list, im2_meta_list, im2_names = read_all_channels(args.image2,
+                                                           args.rotate_im2,
+                                                           args.reorder_im2,
+                                                           args.im2_vox_size)
     if not len(im1_list) == 1:
         print("ERROR: Only one reference allowed in transfer mode")
         sys.exit()
@@ -247,8 +292,14 @@ def transfer_metadata(args, outdir):
 
     print("BEGIN METADATA TRANSFER")
     print("\tREADING IMAGES")
-    im1_list, im1_meta_list, im1_names = read_all_channels(args.image1)
-    im2_list, im2_meta_list, im2_names = read_all_channels(args.image2)
+    im1_list, im1_meta_list, im1_names = read_all_channels(args.image1,
+                                                           args.rotate_im1,
+                                                           args.reorder_im1,
+                                                           args.im1_vox_size)
+    im2_list, im2_meta_list, im2_names = read_all_channels(args.image2,
+                                                           args.rotate_im2,
+                                                           args.reorder_im2,
+                                                           args.im2_vox_size)
     if not len(im1_list) == 1:
         print("ERROR: Only one reference allowed in transfer mode")
         sys.exit()
@@ -259,11 +310,6 @@ def transfer_metadata(args, outdir):
     print("\tMETADATA TRANSFER COMPLETE")
 
 
-# TODO: add a file conversion mode that takes arbitrary image formats as input and writes out
-#       as .nii.gz
-# TODO: add reformat functions (change orientation, reflect, change axis encoding order
-#       e.g. dorsal --> ventral vs ventral --> dorsal)
-# TODO: generally the goal with the above two is to eliminate c3d from the processing pipeline
 # TODO: consider consolidating code duplications (e.g. reading/writing files in different modes)
 if __name__ == '__main__':
 
@@ -285,7 +331,7 @@ if __name__ == '__main__':
         preprocess(args, outdir)
     else:
         error_message = "ERROR: mode (first argument) must be "
-        error_message += "preprocess, transfer_preprocess, or transfer_metadata\n"
-        error_message += "mode given: " + args.mode
+        error_message += "convert_to_nifti, preprocess, transfer_preprocess, "
+        error_message += "or transfer_metadata.\n mode given: " + args.mode
         print(error_message)
 
