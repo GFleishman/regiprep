@@ -251,3 +251,9 @@ def make_hdf5_ext_link_container(in_path, out_path, meta_dict={},
     _write_hdf5_ext_link_container(all_h5_files[time_slice], h5_dataset_path,
                                    out_path, space_slices, meta_dict)
 
+
+def get_default_nifti_header():
+    import nibabel as nib
+    img = nib.Nifti1Image(np.reshape(np.arange(8), (2,2,2)), np.eye(4))
+    return img.header
+

@@ -77,11 +77,13 @@ def read_all_channels(filepaths_string, rotate=None, reorder=None, vox_size=None
     # expected syntax: [[im1_ch1.nii.gz,im1_ch2.nii,...]... ], see mandatory_helplist
     im_paths = [abspath(x.strip('[]')) for x in filepaths_string.split(',')]
     im, im_meta, im_names = [], [], []
+    default_nifti_meta = fileio.get_default_nifti_header()
     for path in im_paths:
         if not (path[-4:] == '.nii' or path[-7:] == '.nii.gz') and vox_size is None:
             print('ERROR: If not using nifti format you must specify vox size, run with -h for help')
             sys.exit()
         data, meta = fileio.read_image(path)
+        meta = {**default_nifti_meta, **meta}
         if vox_size is not None:
             meta['pixdim'][1:4] = [float(x) for x in vox_size.split('x')]
         data, meta = reformat_data(data, meta, rotate, reorder)
@@ -94,6 +96,9 @@ def reformat_data(im, meta, rotate, reorder):
     # Does not modify q/s forms, as reformat should only be called before
     # any preprocessing or alignment has been done, and thus q/s forms are
     # arbitrary/not set
+    # TODO: for multiple axes, there is an ordering effect to multiple rotations
+    #       for 2nd and 3rd rotations, I need to compute new axis based on old
+    #       axis index and already applied rotations
     if rotate:
         rotations = rotate.split('|')
         for rotation in rotations:
