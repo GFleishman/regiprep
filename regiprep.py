@@ -16,63 +16,105 @@ import preprocessing as pp
 # --------------------------- Interface Specs --------------------------------------
 desc = """
 ~~~***~~**~*   RegiPrep   *~**~~***~~~
-Preprocess a pair of confocal images for registration.
-
-Normalizes voxel size, finds a foreground (brain) mask,
-and normalizes the field of view. Maintains accurate
-values for voxel size, dimensions, and offsets in the
-image meta data.
-
-Alternatively, this program can apply the preprocessing
-(resampling and cropping/padding) that was already applied
-to a reference image to an arbitrary set of new images.
-This functionality is turned on with the --transfer_preproc
-flag, in which case image1 is the reference and image2
-is the image(s) to be resampled/cropped/padded. All
-meta data is correctly maintained. The reference image
-must have been preprocessed with this program.
-
-This program only accepts images in NIFTI format, with
-extension '.nii' or '.nii.gz'. The voxel size must be
-correctly set in the meta data and it is assumed that
-voxel 0 is the origin, i.e. x,y,z at i,j,k = 0 are all 0.
+Prepare images for deformable registration.
 """
 
-mandatory_arglist  = ['mode', 'image1', 'image2']
-mandatory_helplist = ["mode to run: preprocess, transfer_preprocess, or transfer_metadata'",
-                      "Filepaths to first image channels",
-                      "Filepaths to second image channels"]
-optional_arglist   = ['--outdir',
-                      '--pad_size', '--min_vox_size',
-                      '--im1_vox_size', '--im2_vox_size',
-                      '--im1_lambda', '--im2_lambda',
-                      '--im1_mask', '--im2_mask',
-                      '--rotate_im1', '--rotate_im2',
-                      '--reorder_im1', '--reorder_im2']
-optional_helplist  = ['Folder to write outputs to, defaults to where program was executed',
-                     'background pad added to each end of each dimension, single int',
-                     'minimum voxel size for resampling',
-                     'im1 voxel size, required if im1 is not nifti',
-                     'im2 voxel size, required if im2 is not nifti',
-                     'lambda param for foreground segmentation of image1 (smaller -> tighter)',
-                     'lambda param for foreground segmentation of image2 (smaller -> tighter)',
-                     'Filepath to mask for image1, prevents computation of new mask',
-                     'Filepath to mask for image2, prevents computation of new mask',
-                     'Rotate im1 clockwise, specify axis (0, 1, or 2) and degs (90, 180, or 270)',
-                     'Rotate im2 clockwise, specify axis (0, 1, or 2) and degs (90, 180, or 270)',
-                     'Invert axis order for im 1 (e.g. vent-->dors to dors-->vent), specify axes',
-                     'Invert axis order for im 2 (e.g. vent-->dors to dors-->vent), specify axes']
+epi = """
+RegiPrep is four programs in one. Each call to
+RegiPrep must select one of these four modes:
 
+reformat
+  - Apply a 0, 90, 180, or 270 degree clockwise
+    rotation about each image axis
+  - Flip the order of the voxel grid for any
+    of the axes (e.g. dorsal --> ventral
+    becomes ventral --> dorsal)
+  - Supports multiple file input types
+  - Writes Nifti images: nifti.nimh.nih.gov
+  - Sets voxel size correctly in metadata
+  - Provide an arbitrary number of channel paths
+    to --image1
+
+preprocess
+  - Prepares two image domains for deformable
+    registration simultaneously
+  - Requires Nifti images
+  - Supports an arbitrary number of channels
+    for both image domains
+  - Resamples both image domains to a common
+    minimum voxel size
+  - Estimates a foreground mask for each image
+    domain
+  - Crops both image domains to a common minimum
+    field of view
+  - Stores new voxel size and offsets to original
+    domain origin in metadata
+
+transfer_metadata
+  - Copies metadata from --image1 to --image2
+  - Requires Nifti images 
+  - Supports one-to-one, one-to-many, and
+    many-to-many transfers
+  - For many-to-many, --image1 and --image2 must
+    have the same number of channels
+
+transfer_preprocessing
+  - Applies same resample and crop/pad to
+    --image2 as was already applied to --image1
+  - Requires Nifti images
+  - --image1 must have been preprocessed with
+    this tool
+  - --image2 channels must have correct metadata
+  - Supports one-to-one, one-to-many, and
+    many-to-many transfers
+  - For many-to-many, --image1 and --image2 must
+    have the same number of channels
+"""
+
+args_dict = {
+  'mode':'which mode to run, see below',
+  '--image1':'Filepaths to first image channels',
+  '--image2':'Filepaths to second image channels',
+  '--outdir':'Where outputs are written; default: execution directory',
+  '--pad_size':'background pad added to both sides of all dimensions',
+  '--min_vox_size':'minimum voxel size for resampling',
+  '--im1_vox_size':'im1 voxel size, required if im1 is not nifti',
+  '--im2_vox_size':'im2 voxel size, required if im2 is not nifti',
+  '--im1_lambda':'lambda param for foreground segmentation of image1 (smaller -> tighter)',
+  '--im2_lambda':'lambda param for foreground segmentation of image2 (smaller -> tighter)',
+  '--im1_mask':'Filepath to mask for image1, prevents computation of new mask',
+  '--im2_mask':'Filepath to mask for image2, prevents computation of new mask',
+  '--im1_rotation':'Rotate im1 clockwise, specify axis (0, 1, or 2) and degs (90, 180, or 270)',
+  '--im2_rotation':'Rotate im2 clockwise, specify axis (0, 1, or 2) and degs (90, 180, or 270)',
+  '--im1_reorder':'Invert axis order for im 1 (e.g. vent-->dors to dors-->vent), specify axes',
+  '--im2_reorder':'Invert axis order for im 2 (e.g. vent-->dors to dors-->vent), specify axes'}
+
+# TODO: consider implementing custom Action subclasses to handle x-delimited lists
+#       internally to the parser, and something similar for rotations and reorders
+options_dict = {a:{'help':args_dict[a]} for a in args_dict.keys()}
+options_dict['mode'] = {**options_dict['mode'],
+                        'choices':['reformat',
+                                   'preprocess',
+                                   'transfer_metadata',
+                                   'transfer_preprocessing']}
+options_dict['--image1'] =     {**options_dict['--image1'], 'nargs':'+',
+                                'required':True}
+options_dict['--image2'] =     {**options_dict['--image2'], 'nargs':'*'}
+options_dict['--outdir'] =     {**options_dict['--outdir'],
+                                'default':abspath(getcwd())}
+options_dict['--pad_size'] =   {**options_dict['--pad_size'], 'type':int,
+                                'default':5}
+options_dict['--im1_lambda'] = {**options_dict['--im1_lambda'], 'type':float,
+                                'default':20.}
+options_dict['--im2_lambda'] = {**options_dict['--im2_lambda'], 'type':float,
+                                'default':20.}
+
+parser = argparse.ArgumentParser(description=desc, epilog=epi,
+         formatter_class=RawTextHelpFormatter)
+for arg in args_dict.keys():
+    parser.add_argument(arg, **options_dict[arg])
 
 # --------------------------- Functions --------------------------------------------
-def parse_inputs():
-    parser = argparse.ArgumentParser(description=desc, formatter_class=RawTextHelpFormatter)
-    arglist_all = mandatory_arglist + optional_arglist
-    helplist_all = mandatory_helplist + optional_helplist
-    [parser.add_argument(a, help=b) for a, b in zip(arglist_all, helplist_all)]
-    return parser.parse_args()
-
-
 def read_all_channels(filepaths_string, rotate=None, reorder=None, vox_size=None):
     # expected syntax: [[im1_ch1.nii.gz,im1_ch2.nii,...]... ], see mandatory_helplist
     im_paths = [abspath(x.strip('[]')) for x in filepaths_string.split(',')]
@@ -253,7 +295,7 @@ def preprocess(args, outdir):
 
 
 
-def transfer_preprocess(args, outdir):
+def transfer_preprocessing(args, outdir):
 
     print("BEGIN PREPROCESSING TRANSFER")
     print("\tREADING IMAGES")
@@ -318,25 +360,22 @@ def transfer_metadata(args, outdir):
 # TODO: consider consolidating code duplications (e.g. reading/writing files in different modes)
 if __name__ == '__main__':
 
-    print("PARSING INPUTS")
-    args = parse_inputs()
-    outdir = args.outdir if args.outdir is not None else abspath(getcwd())
-    if not isdir(outdir):
+    args = parser.parse_args()
+    print(args)
+    if not isdir(args.outdir):
         try:
-            mkdir(outdir)
+            mkdir(args.outdir)
         except OSError as err:
-            print("Could not create outdir: {0}".format(err), file=sys.stderr)
+            print("Could not create outdir:\n{0}".format(err), file=sys.stderr)
 
-    print("DETERMINING MODE")
-    if args.mode == 'transfer_preprocess':
-        transfer_preprocess(args, outdir)
-    elif args.mode == 'transfer_metadata':
-        transfer_metadata(args, outdir)
-    elif args.mode == 'preprocess':
-        preprocess(args, outdir)
-    else:
-        error_message = "ERROR: mode (first argument) must be "
-        error_message += "convert_to_nifti, preprocess, transfer_preprocess, "
-        error_message += "or transfer_metadata.\n mode given: " + args.mode
-        print(error_message)
-
+#    print("DETERMINING MODE")
+#    if args.mode == 'reformat':
+#        reformat(args)
+#    elif args.mode == 'preprocess':
+#        preprocess(args)
+#    elif args.mode == 'transfer_metadata':
+#        transfer_metadata(args)
+#    elif args.mode == 'transfer_preprocessing':
+#        transfer_preprocessing(args)
+#    else:
+#        print("TODO: error message pending")
