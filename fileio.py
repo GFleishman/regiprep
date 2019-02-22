@@ -70,6 +70,7 @@ def _read_tiff(path, meta_dict={}):
     for i in range(d):
         image.seek(i)
         image_data[..., i] = np.array(image)
+    image_data = np.swapaxes(image_data, 0, 1)  # was necessary empirically
     image.close()
     return image_data, meta_dict
 
@@ -252,8 +253,10 @@ def make_hdf5_ext_link_container(in_path, out_path, meta_dict={},
                                    out_path, space_slices, meta_dict)
 
 
-def get_default_nifti_header():
+def get_default_nifti_header(shape=np.array([2,2,2]), aff=np.eye(4),
+                             dtype=np.float32):
     import nibabel as nib
-    img = nib.Nifti1Image(np.reshape(np.arange(8), (2,2,2)), np.eye(4))
+    data = np.zeros(shape, dtype=dtype)
+    img = nib.Nifti1Image(data, aff)
     return img.header
 

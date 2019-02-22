@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-
 # --------------------------- Imports ----------------------------------------------
 import sys
 from os.path import abspath, isdir, basename, splitext
@@ -12,46 +11,21 @@ import preprocessing as pp
 from interface import parser
 
 # --------------------------- Functions --------------------------------------------
-def read_all_channels(filepaths_string, rotate=None, reorder=None, vox_size=None):
-    # expected syntax: [[im1_ch1.nii.gz,im1_ch2.nii,...]... ], see mandatory_helplist
-    im_paths = [abspath(x.strip('[]')) for x in filepaths_string.split(',')]
+def read_all_channels(im_paths, vox_size=None):
     im, im_meta, im_names = [], [], []
-    default_nifti_meta = fileio.get_default_nifti_header()
     for path in im_paths:
-        if not (path[-4:] == '.nii' or path[-7:] == '.nii.gz') and vox_size is None:
-            print('ERROR: If not using nifti format you must specify vox size, run with -h for help')
+        filename_pieces = basename(path).split('.')
+        if 'nii' not in filename_pieces and vox_size is None:
+            print('ERROR: For non-Nifti images you must specify vox size')
             sys.exit()
-        data, meta = fileio.read_image(path)
-        meta = {**default_nifti_meta, **meta}
+        data, meta = fileio.read_image(abspath(path))
+        def_meta = fileio.get_default_nifti_header(shape=data.shape, dtype=data.dtype)
+        meta = {**def_meta, **meta}
+        meta['dim'][1:4] = data.shape
         if vox_size is not None:
             meta['pixdim'][1:4] = [float(x) for x in vox_size.split('x')]
-        data, meta = reformat_data(data, meta, rotate, reorder)
-        name = basename(path).split('.')[0]
-        im.append(data); im_meta.append(meta); im_names.append(name)
+        im.append(data); im_meta.append(meta); im_names.append(filename_pieces[0])
     return im, im_meta, im_names
-
-
-def reformat_data(im, meta, rotate, reorder):
-    # Does not modify q/s forms, as reformat should only be called before
-    # any preprocessing or alignment has been done, and thus q/s forms are
-    # arbitrary/not set
-    # TODO: for multiple axes, there is an ordering effect to multiple rotations
-    #       for 2nd and 3rd rotations, I need to compute new axis based on old
-    #       axis index and already applied rotations
-    if rotate:
-        rotations = rotate.split('|')
-        for rotation in rotations:
-            axis, degrees = [int(x) for x in rotation.split('x')]
-            rot_plane = tuple([x for x in [0, 1, 2] if x != axis])
-            im = np.rot90(im, degrees/90, rot_plane)
-            meta['dim'][1:4] = im.shape
-            if degrees/90 == 1 or degrees/90 == 3:
-                a, b = meta['pixdim'], rot_plane  # to be succinct
-                a[b[0]+1], a[b[1]+1] = a[b[1]+1], a[b[0]+1]
-    if reorder:
-        axes = tuple([int(x) for x in reorder.split('x')])
-        im = np.flip(im, axes)
-    return im, meta
 
 
 def brain_detection(im_list, vox, im_lambda):
@@ -71,35 +45,46 @@ def brain_detection(im_list, vox, im_lambda):
                               iterations=[60, 25, 5], lambda2=im_lambda)
 
 
-def slc_positive(x):
-    ans = x if x > 0 else None
-    return ans
+# --------------------------- Modes -----------------------------------------------
+def reformat(args):
+    # Does not modify q/s forms, as reformat should only be called before
+    # any preprocessing or alignment has been done, and thus q/s forms are
+    # arbitrary/not set
+    im1, im1_vs = args.image1, args.im1_vox_size
+    im_list, im_meta_list, im_names = read_all_channels(im1, im1_vs)
+    for im, meta, name in zip(im_list, im_meta_list, im_names):
+        if args.im1_rotation:
+            rotations = args.im1_rotation.split('.')
+            axes = [int(r.split('x')[0]) for r in rotations]
+            degrees = [int(r.split('x')[1]) for r in rotations]
+            permute = {0:0, 1:1, 2:2}
+            for axis, degree in zip(axes, degrees):
+                rot_plane = np.array([x for x in [0, 1, 2] if x != axis])
+                permuted_rot_plane = [x for x in [0, 1, 2] if x != permute[axis]]
+                im = np.rot90(im, degree/90, permuted_rot_plane)
+                if degree/90 % 2 == 1:
+                    permute = {axis:permute[axis],
+                               rot_plane[0]:permute[rot_plane[1]],
+                               rot_plane[1]:permute[rot_plane[0]]}
+                    a, b = meta['pixdim'], rot_plane+1 # pixdims essentially 1-indexed
+                    a[b[0]], a[b[1]] = a[b[1]], a[b[0]]
+                meta['dim'][1:4] = im.shape
+        if args.im1_reorder:
+            axes = [int(x) for x in args.im1_reorder.split('x')]
+            im = np.flip(im, axes)
+        fileio.write_image(args.outdir+'/'+name+'_regiprep_reformat.nii.gz', im, meta)
 
-def slc_negative(x):
-    ans = x if x < 0 else None
-    return ans
 
-def pad_positive(x):
-    ans = x if x > 0 else 0
-    return ans
 
-def pad_negative(x):
-    ans = x if x < 0 else 0
-    return ans
 
-# --------------------------- Main -------------------------------------------------
-def preprocess(args, outdir):
+def preprocess(args):
 
     print("BEGIN PREPROCESSING")
     print("\tREADING IMAGES")
     """Also initializing some helpful variables for later"""
     im1_list, im1_meta_list, im1_names = read_all_channels(args.image1,
-                                                           args.rotate_im1,
-                                                           args.reorder_im1,
                                                            args.im1_vox_size)
     im2_list, im2_meta_list, im2_names = read_all_channels(args.image2,
-                                                           args.rotate_im2,
-                                                           args.reorder_im2,
                                                            args.im2_vox_size)
     dim = len(im1_list[0].shape)  # image dimension
     v1 = im1_meta_list[0]['pixdim'][1:dim+1]  # im1 voxel size
@@ -182,27 +167,23 @@ def preprocess(args, outdir):
 
 
     print("\tWRITING IMAGES")
-    fileio.write_image(outdir+'/'+im1_names[0]+'_mask.nii.gz', im1_brain_mask, im1_meta_list[0])
-    fileio.write_image(outdir+'/'+im2_names[0]+'_mask.nii.gz', im2_brain_mask, im2_meta_list[0])
+    fileio.write_image(args.outdir+'/'+im1_names[0]+'_mask.nii.gz', im1_brain_mask, im1_meta_list[0])
+    fileio.write_image(args.outdir+'/'+im2_names[0]+'_mask.nii.gz', im2_brain_mask, im2_meta_list[0])
     for i in range(len(im1_list)):
-        fileio.write_image(outdir+'/'+im1_names[i]+'_pp.nii.gz', im1_list[i], im1_meta_list[i])
-        fileio.write_image(outdir+'/'+im2_names[i]+'_pp.nii.gz', im2_list[i], im2_meta_list[i])
+        fileio.write_image(args.outdir+'/'+im1_names[i]+'_pp.nii.gz', im1_list[i], im1_meta_list[i])
+        fileio.write_image(args.outdir+'/'+im2_names[i]+'_pp.nii.gz', im2_list[i], im2_meta_list[i])
     print("PREPROCESSING COMPLETE")
 
 
 
 
-def transfer_preprocessing(args, outdir):
+def transfer_preprocessing(args):
 
     print("BEGIN PREPROCESSING TRANSFER")
     print("\tREADING IMAGES")
     im1_list, im1_meta_list, im1_names = read_all_channels(args.image1,
-                                                           args.rotate_im1,
-                                                           args.reorder_im1,
                                                            args.im1_vox_size)
     im2_list, im2_meta_list, im2_names = read_all_channels(args.image2,
-                                                           args.rotate_im2,
-                                                           args.reorder_im2,
                                                            args.im2_vox_size)
     if not len(im1_list) == 1:
         print("ERROR: Only one reference allowed in transfer mode")
@@ -219,30 +200,30 @@ def transfer_preprocessing(args, outdir):
     dims2 = np.round(np.array(im2_list[0].shape) * v2/v1).astype(np.int)  # at im1 voxel size
     left_offsets = ( (origin1 - origin2) /v1).astype(int)
     right_offsets = dims1 - dims2 + left_offsets
-    box = [slice(slc_positive(l), slc_negative(r)) for l, r in zip(left_offsets, right_offsets)]
-    pad = [(-pad_negative(l), pad_positive(r)) for l, r in zip(left_offsets, right_offsets)]
+    f1 = lambda x: x if x > 0 else None
+    f2 = lambda x: x if x < 0 else None
+    box = [slice(f1(l), f2(r)) for l, r in zip(left_offsets, right_offsets)]
+    f1 = lambda x: abs(x) if x < 0 else 0
+    f2 = lambda x: x if x > 0 else 0
+    pad = [(f1(l), f2(r)) for l, r in zip(left_offsets, right_offsets)]
 
     print("\tAPPLYING PREPROCESSING")
     for im, name in zip(im2_list, im2_names):
         im_pp = pp._resample(im, vox=(v2, v1))
         im_pp = np.pad(im_pp[box], pad, mode='constant')
-        fileio.write_image(outdir+'/'+name+'_pp.nii.gz', im_pp, im1_meta_list[0])
+        fileio.write_image(args.outdir+'/'+name+'_pp.nii.gz', im_pp, im1_meta_list[0])
     print("\tPREPROCESSING TRANSFER COMPLETE")
 
 
 
 
-def transfer_metadata(args, outdir):
+def transfer_metadata(args):
 
     print("BEGIN METADATA TRANSFER")
     print("\tREADING IMAGES")
     im1_list, im1_meta_list, im1_names = read_all_channels(args.image1,
-                                                           args.rotate_im1,
-                                                           args.reorder_im1,
                                                            args.im1_vox_size)
     im2_list, im2_meta_list, im2_names = read_all_channels(args.image2,
-                                                           args.rotate_im2,
-                                                           args.reorder_im2,
                                                            args.im2_vox_size)
     if not len(im1_list) == 1:
         print("ERROR: Only one reference allowed in transfer mode")
@@ -250,29 +231,24 @@ def transfer_metadata(args, outdir):
 
     print("\tTRANSFERING METADATA INFO")
     for im, name in zip(im2_list, im2_names):
-        fileio.write_image(outdir+'/'+name+'_pp.nii.gz', im, im1_meta_list[0])
+        fileio.write_image(args.outdir+'/'+name+'_pp.nii.gz', im, im1_meta_list[0])
     print("\tMETADATA TRANSFER COMPLETE")
 
 
-# TODO: consider consolidating code duplications (e.g. reading/writing files in different modes)
+
+# --------------------------- Entry Point -----------------------------------------
 if __name__ == '__main__':
 
     args = parser.parse_args()
-    print(args)
     if not isdir(args.outdir):
         try:
             mkdir(args.outdir)
         except OSError as err:
             print("Could not create outdir:\n{0}".format(err), file=sys.stderr)
 
-#    print("DETERMINING MODE")
-#    if args.mode == 'reformat':
-#        reformat(args)
-#    elif args.mode == 'preprocess':
-#        preprocess(args)
-#    elif args.mode == 'transfer_metadata':
-#        transfer_metadata(args)
-#    elif args.mode == 'transfer_preprocessing':
-#        transfer_preprocessing(args)
-#    else:
-#        print("TODO: error message pending")
+    modes = {'reformat':reformat,
+             'preprocess':preprocess,
+             'transfer_metadata':transfer_metadata,
+             'transfer_preprocessing':transfer_preprocessing}
+    modes[args.mode](args)
+

@@ -1,10 +1,13 @@
+# TODO: consider implementing custom Action subclasses to handle x-delimited lists
+#       internally to the parser, and something similar for rotations and reorders
+
+# imports
 from os import getcwd
 from os.path import abspath
 import argparse
 from argparse import RawTextHelpFormatter
 
-
-# --------------------------- Interface Specs --------------------------------------
+# specify the description and epilogue
 desc = """
 ~~***~~**~*   RegiPrep   *~**~~***~~~
 Prepare images for deformable registration.
@@ -62,6 +65,7 @@ transfer_preprocessing
     have the same number of channels
 """
 
+# define command line arguments and their help messages
 args_dict = {
   'mode':'which mode to run, see below',
   '--image1':'Filepaths to first image channels',
@@ -76,12 +80,9 @@ args_dict = {
   '--im1_mask':'Filepath to mask for image1, prevents computation of new mask',
   '--im2_mask':'Filepath to mask for image2, prevents computation of new mask',
   '--im1_rotation':'Rotate im1 clockwise, specify axis (0, 1, or 2) and degs (90, 180, or 270)',
-  '--im2_rotation':'Rotate im2 clockwise, specify axis (0, 1, or 2) and degs (90, 180, or 270)',
-  '--im1_reorder':'Invert axis order for im 1 (e.g. vent-->dors to dors-->vent), specify axes',
-  '--im2_reorder':'Invert axis order for im 2 (e.g. vent-->dors to dors-->vent), specify axes'}
+  '--im1_reorder':'Invert axis order for im 1 (e.g. vent-->dors to dors-->vent), specify axes'}
 
-# TODO: consider implementing custom Action subclasses to handle x-delimited lists
-#       internally to the parser, and something similar for rotations and reorders
+# specify additional options for each command line arg
 options_dict = {a:{'help':args_dict[a]} for a in args_dict.keys()}
 options_dict['mode'] = {**options_dict['mode'],
                         'choices':['reformat',
@@ -100,7 +101,9 @@ options_dict['--im1_lambda'] = {**options_dict['--im1_lambda'], 'type':float,
 options_dict['--im2_lambda'] = {**options_dict['--im2_lambda'], 'type':float,
                                 'default':20.}
 
+# construct parser and add arguments
 parser = argparse.ArgumentParser(description=desc, epilog=epi,
          formatter_class=RawTextHelpFormatter)
 for arg in args_dict.keys():
     parser.add_argument(arg, **options_dict[arg])
+
