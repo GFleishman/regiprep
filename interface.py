@@ -7,6 +7,9 @@ from os.path import abspath
 import argparse
 from argparse import RawTextHelpFormatter
 
+# VERSION INFORMATION
+VERSION = 'RegiPrep Version: 1.0'
+
 # specify the description and epilogue
 desc = """
 ~~***~~**~*   RegiPrep   *~**~~***~~~
@@ -47,10 +50,7 @@ preprocess
 transfer_metadata
   - Copies metadata from --image1 to --image2
   - Requires Nifti images
-  - Supports one-to-one, one-to-many, and
-    many-to-many transfers
-  - For many-to-many, --image1 and --image2 must
-    have the same number of channels
+  - Currently supports only one reference image
 
 transfer_preprocessing
   - Applies same resample and crop/pad to
@@ -59,15 +59,14 @@ transfer_preprocessing
   - --image1 must have been preprocessed with
     this tool
   - --image2 channels must have correct metadata
-  - Supports one-to-one, one-to-many, and
-    many-to-many transfers
-  - For many-to-many, --image1 and --image2 must
-    have the same number of channels
+  - Currently supports only one reference image
 """
 
 # define command line arguments and their help messages
 args_dict = {
   'mode':'which mode to run, see below',
+  '--verbose':'print all parameter choices and version to stdout when executed',
+  '--version':'print the version of regiprep that you have',
   '--image1':'Filepaths to first image channels',
   '--image2':'Filepaths to second image channels',
   '--outdir':'Where outputs are written; default: execution directory',
@@ -89,6 +88,10 @@ options_dict['mode'] = {**options_dict['mode'],
                                    'preprocess',
                                    'transfer_metadata',
                                    'transfer_preprocessing']}
+options_dict['--verbose'] =    {**options_dict['--verbose'],
+                                'action':'store_true'}
+options_dict['--version'] =    {**options_dict['--version'],
+                                'action':'version', 'version':VERSION}
 options_dict['--image1'] =     {**options_dict['--image1'], 'nargs':'+',
                                 'required':True}
 options_dict['--image2'] =     {**options_dict['--image2'], 'nargs':'*'}
