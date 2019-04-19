@@ -28,6 +28,15 @@ def read_all_channels(im_paths, vox_size=None):
     return im, im_meta, im_names
 
 
+def read_all_swc(im_paths):
+    im, im_names = [], []
+    for path in im_paths:
+        filename_pieces = basename(path).split('.')
+        swc = fileio.read_swc(path)
+        im.append(swc); im_names.append(filename_pieces[0])
+    return im, im_names
+
+
 # --------------------------- Modes -----------------------------------------------
 def reformat(args):
     # Does not modify q/s forms, as reformat should only be called before
@@ -159,36 +168,54 @@ def preprocess(args):
 
 
 def transfer_preprocessing(args):
+    # TODO: generalize this function to look for swc files and apply transfer appropriately
+    #       need to add a comment line to the beginning of swc files indicating the shift applied to them
+    #       # preprocessed with regiprep; shift relative to origin: x-shift, y-shift, z-shift
 
     im1, im1_vs = args.image1, args.im1_vox_size
     im2, im2_vs = args.image2, args.im2_vox_size
-    im1_list, im1_meta_list, im1_names = read_all_channels(im1, im1_vs)
-    im2_list, im2_meta_list, im2_names = read_all_channels(im2, im2_vs)
-    if not len(im1_list) == 1:
-        print("ERROR: Only one reference allowed in transfer mode")
-        sys.exit()
 
-    """assumed that all images in im2_list have the same shape, origin, and voxel size"""
-    d = len(im1_list[0].shape)  # image dimensionality
-    origin1 = np.array([im1_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
-    origin2 = np.array([im2_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
-    v1 = im1_meta_list[0]['pixdim'][1:d+1]
-    v2 = im2_meta_list[0]['pixdim'][1:d+1]
-    dims1 = np.array(im1_list[0].shape)
-    dims2 = np.round(np.array(im2_list[0].shape) * v2/v1).astype(np.int)  # at im1 voxel size
-    left_offsets = ( (origin1 - origin2) /v1).astype(int)
-    right_offsets = dims1 - dims2 + left_offsets
-    f1 = lambda x: x if x > 0 else None
-    f2 = lambda x: x if x < 0 else None
-    box = [slice(f1(l), f2(r)) for l, r in zip(left_offsets, right_offsets)]
-    f1 = lambda x: abs(x) if x < 0 else 0
-    f2 = lambda x: x if x > 0 else 0
-    pad = [(f1(l), f2(r)) for l, r in zip(left_offsets, right_offsets)]
+    if '.swc' in im2[0]:
+        im1_list, im1_meta_list, im1_names = read_all_channels(im1, im1_vs)
+        im2_list, im2_names = read_all_swc(im2)
+        if not len(im1_list) == 1:
+            print("ERROR: Only one reference allowed in transfer mode")
+            sys.exit()
 
-    for im, name in zip(im2_list, im2_names):
-        im_pp = pp._resample(im, vox=(v2, v1))
-        im_pp = np.pad(im_pp[box], pad, mode='constant')
-        fileio.write_image(args.outdir+'/'+name+'_regiprep_tpp.nii.gz', im_pp, im1_meta_list[0])
+        d = len(im1_list[0].shape)  # image dimensionality
+        origin1 = np.array([im1_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
+        for im, name in zip(im2_list, im2_names):
+            im.translate(im.offset - origin1)
+            fileio.write_swc(args.outdir+'/'+name+'_regiprep_tpp.swc', im)
+
+    else:
+        im1_list, im1_meta_list, im1_names = read_all_channels(im1, im1_vs)
+        im2_list, im2_meta_list, im2_names = read_all_channels(im2, im2_vs)
+        if not len(im1_list) == 1:
+            print("ERROR: Only one reference allowed in transfer mode")
+            sys.exit()
+
+        """assumed that all images in im2_list have the same shape, origin, and voxel size"""
+        d = len(im1_list[0].shape)  # image dimensionality
+        origin1 = np.array([im1_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
+        origin2 = np.array([im2_meta_list[0]['srow_'+a][-1] for a in ['x', 'y', 'z']])
+        v1 = im1_meta_list[0]['pixdim'][1:d+1]
+        v2 = im2_meta_list[0]['pixdim'][1:d+1]
+        dims1 = np.array(im1_list[0].shape)
+        dims2 = np.round(np.array(im2_list[0].shape) * v2/v1).astype(np.int)  # at im1 voxel size
+        left_offsets = ( (origin1 - origin2) /v1 ).astype(int)
+        right_offsets = dims1 - dims2 + left_offsets
+        f1 = lambda x: x if x > 0 else None
+        f2 = lambda x: x if x < 0 else None
+        box = [slice(f1(l), f2(r)) for l, r in zip(left_offsets, right_offsets)]
+        f1 = lambda x: abs(x) if x < 0 else 0
+        f2 = lambda x: x if x > 0 else 0
+        pad = [(f1(l), f2(r)) for l, r in zip(left_offsets, right_offsets)]
+
+        for im, name in zip(im2_list, im2_names):
+            im_pp = pp._resample(im, vox=(v2, v1))
+            im_pp = np.pad(im_pp[box], pad, mode='constant')
+            fileio.write_image(args.outdir+'/'+name+'_regiprep_tpp.nii.gz', im_pp, im1_meta_list[0])
 
 
 def transfer_metadata(args):

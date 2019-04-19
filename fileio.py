@@ -206,6 +206,38 @@ def _write_hdf5_ext_link_container(files_to_wrap, dataset_path, path,
                 container.attrs[k] = meta_dict[k]
         container.attrs[SLICE_ATTR_KEY] = space_slices_arr
 
+# SWC
+def read_swc(path):
+    import swc
+
+    with open(path) as f:
+        points = f.readlines()
+    # assuming lines that start with digits are points
+    geo = swc.swc_object()
+    for p in points:
+        if p[0].isdigit():
+            p = p.split()
+            swc_point = swc.swc_point(int(p[0]))
+            swc_point.type = int(p[1])
+            swc_point.coords = np.array([float(x) for x in p[2:5]])
+            swc_point.radius = float(p[5])
+            swc_point.parent = int(p[6])
+            geo.add_point(swc_point)
+        elif '# Regiprep Offset: ' in p:
+            offset = p.replace('# Regiprep Offset: ', '').split()
+            geo.offset = np.array(offset)
+    return geo
+
+
+def write_swc(path, swc_object):
+    with open(path, 'w') as f:
+        f.write('# Preprocessed with Regiprep\n')
+        offset = '# Regiprep Offset: {}'.format(swc_object.offset[0])
+        offset += ' {} {}\n'.format(swc_object.offset[1], swc_object.offset[2])
+        f.write(offset)
+        for p in swc_object.points:
+            f.write(p.print())
+
 
 # --------------------------- External Functions -----------------------------------
 # TODO: add docstrings
